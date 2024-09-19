@@ -1,12 +1,16 @@
+import cv2
+import numpy as np
 from tkinter import Tk, filedialog, Label, ttk, HORIZONTAL
 from PIL import Image, ImageTk
 from ttkbootstrap import Style
 from image_processor import ImageProcessor
 
 class ImageEditorApp:
-    def __init__(self, master):
+    def __init__(self, master, default_filter="Нет"):
         self.master = master
         self.processor = ImageProcessor()
+        self.default_filter = default_filter
+        self.original_image = None
         self.setup_ui()
 
     def setup_ui(self):
@@ -30,7 +34,21 @@ class ImageEditorApp:
         open_button.pack(pady=10)
 
         self.filter_combobox = ttk.Combobox(self.control_frame, state="readonly")
-        self.filter_combobox['values'] = [
+        self.update_filter_options()
+        self.filter_combobox.set(self.default_filter)
+        self.filter_combobox.pack(pady=10)
+
+        self.slider = ttk.Scale(self.control_frame, from_=1, to=10, orient=HORIZONTAL, command=self.apply_filter)
+        self.slider.pack(pady=10)
+        self.slider.pack_forget()  # скрываем слайдер по умолчанию
+
+        self.save_button = ttk.Button(self.control_frame, text="Сохранить изображение", command=self.save_image)
+        self.save_button.pack(pady=10)
+
+        self.filter_combobox.bind("<<ComboboxSelected>>", self.update_slider_and_apply_filter)
+
+    def update_filter_options(self):
+        filters = [
             "Нет", "Негатив", "Степенное преобразование", "Вырезание диапазона яркостей",
             "Линейный сглаживающий фильтр", "Медианный фильтр", "Градиент Робертса",
             "Градиент Собеля", "Лапласиан", "Гистограмма изображения", "Эквализация гистограммы",
@@ -38,27 +56,22 @@ class ImageEditorApp:
             "Морфология: Дилатация", "Морфология: Эрозия", "Морфология: Замыкание",
             "Морфология: Размыкание", "Морфология: Выделение границ", "Морфология: Остов"
         ]
-        self.filter_combobox.set("Нет")
-        self.filter_combobox.pack(pady=10)
+        if self.default_filter == "Нет":
+            self.filter_combobox['values'] = filters
+        else:
+            self.filter_combobox['values'] = ["Нет", self.default_filter]
 
-        self.slider = ttk.Scale(self.control_frame, from_=1, to=255, orient=HORIZONTAL, command=self.apply_filter)
-        self.slider.pack(pady=10)
-        self.slider.pack_forget()
+    def update_slider_and_apply_filter(self, event):
+        filter_name = self.filter_combobox.get()
+        if filter_name == "Негатив":
+            self.slider.pack_forget()
+        elif filter_name in ["Степенное преобразование", "Вырезание диапазона яркостей", "Линейный сглаживающий фильтр", "Медианный фильтр", "Пороговый фильтр с глобальным порогом"]:
+            self.slider.pack(pady=10)
+        else:
+            self.slider.pack_forget()
 
-        self.save_button = ttk.Button(self.control_frame, text="Сохранить изображение", command=self.save_image)
-        self.save_button.pack(pady=10)
+        self.apply_filter()
 
-        self.filter_combobox.bind("<<ComboboxSelected>>", self.update_slider_and_apply_filter)
-    
-    def update_slider_and_apply_filter(self, *args):
-    	filter_name = self.filter_combobox.get()
-    	if filter_name in ["Степенное преобразование", "Вырезание диапазона яркостей", 
-                       	"Линейный сглаживающий фильтр", "Медианный фильтр"]:
-        	self.slider.pack(pady=10)
-    	else:
-        	self.slider.pack_forget()
-
-    	self.apply_filter()
     def save_image(self):
         if self.processor.processed_image is not None:
             file_path = filedialog.asksaveasfilename(defaultextension=".png",
@@ -67,11 +80,12 @@ class ImageEditorApp:
                                                                   ("All files", "*.*")])
             if file_path:
                 cv2.imwrite(file_path, self.processor.processed_image)
-    
+
     def open_image(self):
         file_path = filedialog.askopenfilename(filetypes=[("Изображения", "*.png;*.jpg;*.jpeg;*.bmp")])
         if file_path:
             self.processor.load_image(file_path)
+            self.original_image = self.processor.current_image.copy()
             self.resize_and_show_image(self.processor.current_image)
 
     def resize_and_show_image(self, img):
@@ -86,12 +100,15 @@ class ImageEditorApp:
 
     def apply_filter(self, *args):
         filter_name = self.filter_combobox.get()
-        if filter_name == "Негатив":
+        if filter_name == "Нет":
+            self.processor.current_image = self.original_image.copy()
+            self.processor.processed_image = self.original_image.copy()
+        elif filter_name == "Негатив":
             self.processor.apply_negative()
         elif filter_name == "Степенное преобразование":
             self.processor.apply_power_transform(self.slider.get())
         elif filter_name == "Вырезание диапазона яркостей":
-            self.processor.apply_brightness_cut(int(self.slider.get()), 255)
+            self.processor.apply_brightness_cut(50, self.slider.get())
         elif filter_name == "Линейный сглаживающий фильтр":
             self.processor.apply_smoothing_filter(int(self.slider.get()))
         elif filter_name == "Медианный фильтр":
@@ -124,4 +141,3 @@ class ImageEditorApp:
             self.processor.apply_skeletonization()
 
         self.resize_and_show_image(self.processor.processed_image)
-
